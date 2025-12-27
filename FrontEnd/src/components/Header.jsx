@@ -1,8 +1,9 @@
 import { Link } from 'react-router-dom';
 import { MapPin, ShoppingCart, User, Search, Store } from 'lucide-react';
 import FeaturesMenu from './FeaturesMenu';
+import UserMenu from './UserMenu'; // We will use this component
 
-const Header = ({ onLoginClick, onCartClick, cartItemCount, location, onLocationChange }) => {
+const Header = ({ user, onLoginClick, onCartClick, cartItemCount, location, onLocationChange }) => {
   return (
     <header className="bg-white shadow-md sticky top-0 z-50">
       <div className="container-custom">
@@ -36,13 +37,17 @@ const Header = ({ onLoginClick, onCartClick, cartItemCount, location, onLocation
               <span className="font-medium text-sm">Satıcı Ol</span>
             </Link>
 
-            <button 
-              onClick={onLoginClick}
-              className="hidden md:flex items-center space-x-2 text-gray-700 hover:text-primary transition"
-            >
-              <User className="w-5 h-5" />
-              <span className="font-medium">Giriş Yap</span>
-            </button>
+            {user ? (
+              <UserMenu user={user} /> // Show UserMenu if logged in
+            ) : (
+              <button 
+                onClick={onLoginClick}
+                className="hidden md:flex items-center space-x-2 text-gray-700 hover:text-primary transition"
+              >
+                <User className="w-5 h-5" />
+                <span className="font-medium">Giriş Yap</span>
+              </button>
+            )}
 
             <button 
               onClick={onCartClick}

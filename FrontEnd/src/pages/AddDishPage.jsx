@@ -1,6 +1,13 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Upload, X } from 'lucide-react';
+import { authenticatedFetch } from '../utils/api';
+
+const SellerInfo = {
+    // NOTE: Replace this with the actual restaurant ID of the logged-in seller.
+    // Since the seller dashboard context is mocked, we hardcode it for demonstration.
+    restaurantId: 1 
+};
 
 const AddDishPage = () => {
   const navigate = useNavigate();
@@ -9,7 +16,8 @@ const AddDishPage = () => {
     category: 'Pizza',
     price: '',
     description: '',
-    image: ''
+    image: '', // This will hold the Base64 string for the backend
+    is_available: 1,
   });
   const [preview, setPreview] = useState('');
   const [loading, setLoading] = useState(false);
@@ -39,23 +47,28 @@ const AddDishPage = () => {
   const handleImageChange = (e) => {
     const file = e.target.files[0];
     if (file) {
+      // Basic check to prevent huge files from crashing the app/storage if we use local storage later
+      if (file.size > 2 * 1024 * 1024) { // Max 2MB
+        setError('Resim boyutu 2MB üzerinde olamaz.');
+        return;
+      }
       const reader = new FileReader();
       reader.onloadend = () => {
         setPreview(reader.result);
         setFormData(prev => ({
           ...prev,
-          image: reader.result
+          image: reader.result // Base64 string
         }));
       };
       reader.readAsDataURL(file);
     }
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     
     if (!formData.name || !formData.price || !formData.description || !formData.image) {
-      setError('Lütfen tüm alanları doldurunuz');
+      setError('Lütfen tüm zorunlu alanları doldurunuz (Resim dahil)');
       return;
     }
 
@@ -65,22 +78,31 @@ const AddDishPage = () => {
     }
 
     setLoading(true);
-    setTimeout(() => {
-      const newDish = {
-        id: Date.now(),
-        ...formData,
-        price: parseFloat(formData.price),
-        available: true,
-        orders: 0
-      };
-      
-      const dishes = JSON.parse(localStorage.getItem('sellerDishes') || '[]');
-      dishes.push(newDish);
-      localStorage.setItem('sellerDishes', JSON.stringify(dishes));
-      
-      setLoading(false);
-      navigate('/seller/dashboard');
-    }, 1000);
+
+    // Prepare payload, ensuring price is a number
+    const payload = {
+      ...formData,
+      price: parseFloat(formData.price),
+    };
+
+    try {
+        // API call to the backend: POST /api/dishes/restaurants/:id/dishes
+        const result = await authenticatedFetch(
+            `/dishes/restaurants/${SellerInfo.restaurantId}/dishes`,
+            {
+                method: 'POST',
+                body: JSON.stringify(payload)
+            }
+        );
+        
+        setLoading(false);
+        alert(`Ürün başarıyla eklendi (ID: ${result.dishId})`);
+        navigate('/seller/dashboard');
+
+    } catch (e) {
+        setLoading(false);
+        setError(e.message || 'Ürün eklenirken bir hata oluştu.');
+    }
   };
 
   return (
@@ -95,7 +117,7 @@ const AddDishPage = () => {
             <ArrowLeft className="w-5 h-5" />
             <span>Geri Dön</span>
           </button>
-          <h1 className="text-2xl font-bold text-gray-800 ml-4">Yeni Ürün Ekle</h1>
+          <h1 className="text-2xl font-bold text-gray-800 ml-4">Yeni Ürün Ekle (Restoran ID: {SellerInfo.restaurantId})</h1>
         </div>
       </header>
 
@@ -105,7 +127,7 @@ const AddDishPage = () => {
             {/* Image Upload */}
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-3">
-                Ürün Resmi
+                Ürün Resmi *
               </label>
               <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center hover:border-primary transition cursor-pointer">
                 <input
@@ -139,7 +161,7 @@ const AddDishPage = () => {
                     <div>
                       <Upload className="w-12 h-12 text-gray-400 mx-auto mb-2" />
                       <p className="text-gray-600 font-semibold">Resim yüklemek için tıklayın</p>
-                      <p className="text-gray-400 text-sm">PNG, JPG, GIF (Max 5MB)</p>
+                      <p className="text-gray-400 text-sm">PNG, JPG, GIF (Max 2MB)</p>
                     </div>
                   )}
                 </label>
@@ -158,6 +180,7 @@ const AddDishPage = () => {
                 value={formData.name}
                 onChange={handleInputChange}
                 className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
+                required
               />
             </div>
 
@@ -192,6 +215,7 @@ const AddDishPage = () => {
                 step="0.01"
                 min="0"
                 className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
+                required
               />
             </div>
 
@@ -207,8 +231,26 @@ const AddDishPage = () => {
                 onChange={handleInputChange}
                 rows="4"
                 className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent resize-none"
+                required
               />
             </div>
+
+            {/* Availability */}
+            <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                    Durum
+                </label>
+                <select
+                    name="is_available"
+                    value={formData.is_available}
+                    onChange={handleInputChange}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
+                >
+                    <option value={1}>Aktif (Mevcut)</option>
+                    <option value={0}>Pasif (Tükendi)</option>
+                </select>
+            </div>
+
 
             {/* Error Message */}
             {error && (
@@ -223,6 +265,7 @@ const AddDishPage = () => {
                 type="button"
                 onClick={() => navigate('/seller/dashboard')}
                 className="flex-1 px-6 py-3 border-2 border-gray-300 text-gray-700 rounded-lg font-semibold hover:bg-gray-50 transition"
+                disabled={loading}
               >
                 İptal
               </button>

@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { Star, Clock, Filter, ChevronDown, Heart } from 'lucide-react';
+import { publicFetch } from '../utils/api'; // Use public fetch
 
 const RestaurantListPage = () => {
   const [selectedFilters, setSelectedFilters] = useState({
@@ -37,12 +38,7 @@ const RestaurantListPage = () => {
         setLoading(true);
         setError('');
 
-        const res = await fetch('/api/restaurants');
-        const data = await res.json();
-
-        if (!res.ok) {
-          throw new Error(data?.message || 'Failed to load restaurants');
-        }
+        const data = await publicFetch('/restaurants');
 
         const mapped = Array.isArray(data)
           ? data.map((r) => ({
@@ -53,7 +49,7 @@ const RestaurantListPage = () => {
               rating: Number(r.rating ?? 0),
               deliveryTimeMin: Number(r.delivery_time_min ?? 0),
               deliveryTimeMax: Number(r.delivery_time_max ?? 0),
-              deliveryFee: r.delivery_fee ?? '',
+              deliveryFee: r.delivery_fee === 0 || r.delivery_fee === '0' ? 'Ücretsiz' : `${r.delivery_fee} ₺`,
               minOrder: Number(r.min_order ?? 0),
               image:
                 r.image ||
@@ -126,7 +122,7 @@ const RestaurantListPage = () => {
     }
 
     return filtered;
-  }, [selectedFilters, sortBy]);
+  }, [selectedFilters, sortBy, restaurants]);
 
   const handleFilterChange = (filterName, value) => {
     setSelectedFilters(prev => ({

@@ -1,5 +1,5 @@
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
-import { useEffect, useState } from 'react';
+import { BrowserRouter as Router, Routes, Route, useNavigate, Navigate } from 'react-router-dom';
+import { useEffect, useState, createContext, useContext } from 'react';
 import Header from './components/Header';
 import HomePage from './pages/HomePage';
 import RestaurantListPage from './pages/RestaurantListPage';
@@ -19,196 +19,236 @@ import FeaturesShowcasePage from './pages/FeaturesShowcasePage';
 import AdvancedSearchPage from './pages/AdvancedSearchPage';
 import FavoriteDishesPage from './pages/FavoriteDishesPage';
 
-function App() {
-  const [showLoginModal, setShowLoginModal] = useState(false);
-  const [showCart, setShowCart] = useState(false);
-  const [cartItems, setCartItems] = useState([]);
-  const [location, setLocation] = useState('İstanbul, Kadıköy');
+import { authenticatedFetch, publicFetch } from './utils/api';
 
+// --- Global Context ---
+const AppContext = createContext();
+
+export const useAppContext = () => useContext(AppContext);
+
+// --- Auth and Data Provider ---
+const AppProvider = ({ children }) => {
+  const [user, setUser] = useState(null);
+  const [cartItems, setCartItems] = useState([]);
+  const [isAuthLoading, setIsAuthLoading] = useState(true);
+  const [cartError, setCartError] = useState('');
+  
   const getAuthToken = () => localStorage.getItem('authToken');
 
-  const safeJson = async (res) => {
-    if (res.status === 204 || res.status === 304) return null;
-    const contentType = res.headers.get('content-type') || '';
-    if (!contentType.includes('application/json')) return null;
-    return await res.json();
+  // --- Auth Functions ---
+  const loginUser = (userData, token) => {
+    if (token) localStorage.setItem('authToken', token);
+    setUser(userData);
   };
 
+  const logoutUser = () => {
+    localStorage.removeItem('authToken');
+    setUser(null);
+    setCartItems([]);
+  };
+
+  const updateUserProfile = (updatedData) => {
+    setUser(prev => ({ ...prev, ...updatedData }));
+  };
+
+  // --- Cart Functions ---
   const loadCart = async () => {
     const token = getAuthToken();
     if (!token) {
       setCartItems([]);
+      setCartError('Lütfen giriş yapın.');
       return;
     }
 
-    const res = await fetch(`/api/cart?t=${Date.now()}`, {
-      cache: 'no-store',
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'Cache-Control': 'no-cache',
-      },
-    });
-
-    const data = await safeJson(res);
-
-    if (res.status === 304) {
-      return;
+    try {
+      setCartError('');
+      const data = await authenticatedFetch('/cart');
+      setCartItems(Array.isArray(data?.items) ? data.items : []);
+    } catch (e) {
+      setCartItems([]);
+      setCartError(e.message);
     }
-    if (!res.ok) {
-      throw new Error(data?.message || 'Failed to load cart');
-    }
-
-    setCartItems(Array.isArray(data?.items) ? data.items : []);
   };
 
-  useEffect(() => {
-    loadCart().catch(() => {
-      setCartItems([]);
-    });
-  }, []);
-
-  const addToCart = async (item) => {
-    const token = getAuthToken();
-    if (!token) {
-      setShowLoginModal(true);
-      return;
-    }
+  const addToCart = async (item, quantity = 1) => {
+    if (!user) return false;
 
     const restaurantId = item?.restaurant_id;
     if (!restaurantId) {
-      alert('Restoran bilgisi bulunamadı.');
-      return;
+      throw new Error('Restoran bilgisi bulunamadı.');
     }
 
-    const res = await fetch('/api/cart/add', {
-      method: 'POST',
-      cache: 'no-store',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`,
-        'Cache-Control': 'no-cache',
-      },
-      body: JSON.stringify({
-        restaurant_id: restaurantId,
-        dish_id: item.id,
-        quantity: 1,
-      }),
-    });
-
-    const data = await safeJson(res);
-    if (!res.ok) {
-      alert(data?.message || 'Sepete eklenemedi');
-      return;
+    try {
+      await authenticatedFetch('/cart/add', {
+        method: 'POST',
+        body: JSON.stringify({
+          restaurant_id: restaurantId,
+          dish_id: item.id,
+          quantity: quantity,
+        }),
+      });
+      await loadCart();
+      return true;
+    } catch (e) {
+      throw new Error(e.message || 'Sepete eklenemedi');
     }
-
-    await loadCart();
-  };
-
-  const createOrder = async ({ payment_method, delivery_address, delivery_fee = 0 }) => {
-    const token = getAuthToken();
-    if (!token) {
-      setShowLoginModal(true);
-      throw new Error('Lütfen giriş yapın');
-    }
-
-    const res = await fetch('/api/orders/create', {
-      method: 'POST',
-      cache: 'no-store',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`,
-        'Cache-Control': 'no-cache',
-      },
-      body: JSON.stringify({
-        payment_method,
-        delivery_address,
-        delivery_fee,
-      }),
-    });
-
-    const data = await safeJson(res);
-    if (!res.ok) {
-      throw new Error(data?.message || 'Sipariş oluşturulamadı');
-    }
-
-    await loadCart();
-    return data;
   };
 
   const removeFromCart = async (itemId) => {
-    const token = getAuthToken();
-    if (!token) {
-      setShowLoginModal(true);
-      return;
+    if (!user) return;
+    try {
+      await authenticatedFetch(`/cart/remove/${itemId}`, { method: 'DELETE' });
+      await loadCart();
+    } catch (e) {
+      throw new Error(e.message || 'Ürün silinemedi');
     }
-
-    const res = await fetch(`/api/cart/remove/${itemId}`, {
-      method: 'DELETE',
-      cache: 'no-store',
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'Cache-Control': 'no-cache',
-      },
-    });
-
-    const data = await safeJson(res);
-    if (!res.ok) {
-      alert(data?.message || 'Ürün silinemedi');
-      return;
-    }
-
-    await loadCart();
   };
 
   const updateQuantity = async (itemId, quantity) => {
-    const token = getAuthToken();
-    if (!token) {
-      setShowLoginModal(true);
-      return;
-    }
-
+    if (!user) return;
     if (quantity <= 0) {
       await removeFromCart(itemId);
       return;
     }
 
-    const res = await fetch('/api/cart/update', {
-      method: 'PATCH',
-      cache: 'no-store',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`,
-        'Cache-Control': 'no-cache',
-      },
-      body: JSON.stringify({ itemId, quantity }),
-    });
-
-    const data = await safeJson(res);
-    if (!res.ok) {
-      alert(data?.message || 'Miktar güncellenemedi');
-      return;
+    try {
+      await authenticatedFetch('/cart/update', {
+        method: 'PATCH',
+        body: JSON.stringify({ itemId, quantity }),
+      });
+      await loadCart();
+    } catch (e) {
+      throw new Error(e.message || 'Miktar güncellenemedi');
     }
+  };
 
-    await loadCart();
+  const createOrder = async ({ payment_method, delivery_address, delivery_fee = 0 }) => {
+    if (!user) throw new Error('Lütfen giriş yapın');
+    
+    try {
+      const data = await authenticatedFetch('/orders/create', {
+        method: 'POST',
+        body: JSON.stringify({
+          payment_method,
+          delivery_address,
+          delivery_fee,
+        }),
+      });
+      await loadCart(); // Clear the cart after successful order
+      return data;
+    } catch (e) {
+      throw new Error(e.message || 'Sipariş oluşturulamadı');
+    }
   };
 
   const getTotalItems = () => {
     return cartItems.reduce((total, item) => total + item.quantity, 0);
   };
 
+  // --- Initial Data Loading (User and Cart) ---
+  useEffect(() => {
+    const token = getAuthToken();
+    if (!token) {
+      setIsAuthLoading(false);
+      return;
+    }
+
+    const loadUserData = async () => {
+      try {
+        const userData = await authenticatedFetch('/auth/me');
+        setUser(userData);
+        await loadCart();
+      } catch (e) {
+        // If /me fails, token is likely expired/invalid
+        localStorage.removeItem('authToken');
+        console.error("Auth Load Error:", e);
+      } finally {
+        setIsAuthLoading(false);
+      }
+    };
+
+    loadUserData();
+  }, []);
+
+  const contextValue = {
+    user,
+    isAuthLoading,
+    loginUser,
+    logoutUser,
+    updateUserProfile,
+    cartItems,
+    addToCart,
+    removeFromCart,
+    updateQuantity,
+    createOrder,
+    loadCart,
+    getTotalItems,
+    cartError,
+  };
+
+  // If we are loading user data, show a simple loading screen
+  if (isAuthLoading && getAuthToken()) {
+    return <div className="flex items-center justify-center h-screen">Veriler Yükleniyor...</div>;
+  }
+
+  return (
+    <AppContext.Provider value={contextValue}>
+      {children}
+    </AppContext.Provider>
+  );
+};
+
+// --- Protected Route Wrapper (Optional, but good practice) ---
+const ProtectedRoute = ({ element }) => {
+  const { user, isAuthLoading } = useAppContext();
+  
+  if (isAuthLoading) {
+    return <div className="flex items-center justify-center h-screen">Yükleniyor...</div>;
+  }
+
+  if (!user) {
+    // Redirect to home or show login modal if not logged in
+    return <Navigate to="/" replace />;
+  }
+
+  return element;
+};
+
+// --- Main App Component ---
+function App() {
+  const { user, getTotalItems, addToCart, removeFromCart, updateQuantity, createOrder, loadCart, cartItems } = useAppContext();
+  const [showLoginModal, setShowLoginModal] = useState(false);
+  const [showCart, setShowCart] = useState(false);
+  const [location, setLocation] = useState('İstanbul, Kadıköy');
+
+  const handleCartClick = async () => {
+    if (!user) {
+      setShowLoginModal(true);
+      return;
+    }
+    try {
+      await loadCart();
+      setShowCart(true);
+    } catch (e) {
+      alert("Sepet yüklenemedi: " + e.message);
+    }
+  };
+
+  const handleLoginClick = () => {
+    if (user) {
+      // User is already logged in, maybe show user profile menu later
+      return; 
+    }
+    setShowLoginModal(true);
+  };
+
   return (
     <Router>
       <div className="min-h-screen bg-gray-50">
         <Header 
-          onLoginClick={() => setShowLoginModal(true)}
-          onCartClick={async () => {
-            try {
-              await loadCart();
-              setShowCart(true);
-            } catch (e) {
-              alert(e?.message || 'Sepet yüklenemedi');
-            }
-          }}
+          user={user} // Pass user data to Header
+          onLoginClick={handleLoginClick}
+          onCartClick={handleCartClick}
           cartItemCount={getTotalItems()}
           location={location}
           onLocationChange={setLocation}
@@ -224,15 +264,18 @@ function App() {
           <Route path="/seller/login" element={<SellerLoginPage />} />
           <Route path="/seller/dashboard" element={<SellerDashboard />} />
           <Route path="/seller/add-dish" element={<AddDishPage />} />
-          <Route path="/profile" element={<UserProfilePage />} />
-          <Route path="/orders" element={<OrderTrackingPage />} />
-          <Route path="/coupons" element={<CouponsPage />} />
-          <Route path="/favorites" element={<FavoritesPage />} />
-          <Route path="/tracking" element={<LiveTrackingPage />} />
-          <Route path="/notifications" element={<NotificationsPage />} />
+          
+          {/* Protected Routes */}
+          <Route path="/profile" element={<ProtectedRoute element={<UserProfilePage />} />} />
+          <Route path="/orders" element={<ProtectedRoute element={<OrderTrackingPage />} />} />
+          {/* Mock pages that still exist, but should be protected */}
+          <Route path="/coupons" element={<ProtectedRoute element={<CouponsPage />} />} />
+          <Route path="/favorites" element={<ProtectedRoute element={<FavoritesPage />} />} />
+          <Route path="/tracking" element={<ProtectedRoute element={<LiveTrackingPage />} />} />
+          <Route path="/notifications" element={<ProtectedRoute element={<NotificationsPage />} />} />
           <Route path="/features" element={<FeaturesShowcasePage />} />
           <Route path="/search" element={<AdvancedSearchPage />} />
-          <Route path="/favorite-dishes" element={<FavoriteDishesPage />} />
+          <Route path="/favorite-dishes" element={<ProtectedRoute element={<FavoriteDishesPage />} />} />
         </Routes>
 
         {showLoginModal && (
@@ -253,4 +296,9 @@ function App() {
   );
 }
 
-export default App;
+// Wrap App with the Provider
+export default () => (
+    <AppProvider>
+        <App />
+    </AppProvider>
+);

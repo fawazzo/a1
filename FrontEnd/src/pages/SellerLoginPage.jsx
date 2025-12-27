@@ -1,21 +1,39 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Mail, Lock, Store, Eye, EyeOff } from 'lucide-react';
+import { publicFetch } from '../utils/api'; // Use publicFetch for auth
 
 const SellerLoginPage = () => {
   const navigate = useNavigate();
   const [isLogin, setIsLogin] = useState(true);
   const [showPassword, setShowPassword] = useState(false);
   const [formData, setFormData] = useState({
+    name: '',
     email: '',
-    password: '',
-    restaurantName: '',
     phone: '',
+    password: '',
     address: '',
-    passwordConfirm: ''
+    passwordConfirm: '',
+    restaurantName: '', // Stored locally only for registration prompt
   });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+
+  // Check if a seller token already exists (for simple persistence)
+  const checkSellerAuth = () => {
+      const token = localStorage.getItem('sellerAuthToken');
+      if (token) {
+          // In a real app, we'd validate this token, but for this project, just navigate.
+          navigate('/seller/dashboard');
+          return true;
+      }
+      return false;
+  }
+  
+  // Navigate immediately if already authenticated
+  useState(() => {
+      checkSellerAuth();
+  }, []);
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
@@ -26,28 +44,53 @@ const SellerLoginPage = () => {
     setError('');
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
+    setError('');
 
     if (isLogin) {
       if (!formData.email || !formData.password) {
-        setError('Lütfen tüm alanları doldurunuz');
+        setError('Lütfen e-posta ve şifre giriniz.');
         setLoading(false);
         return;
       }
-      setTimeout(() => {
-        localStorage.setItem('sellerAuth', JSON.stringify({
-          email: formData.email,
-          restaurantName: 'Pizza Palace',
-          id: 1
-        }));
+
+      try {
+        const data = await publicFetch('/auth/login', {
+          method: 'POST',
+          body: JSON.stringify({
+            email: formData.email,
+            password: formData.password,
+          }),
+        });
+
+        if (data.user && data.token) {
+            // Check if the user is a seller (The backend /login response should ideally include is_seller status)
+            // Since we don't have the is_seller status in /login, we must trust the backend protects seller routes.
+            
+            // NOTE: Storing seller token separately to keep customer and seller sessions distinct
+            localStorage.setItem('sellerAuthToken', data.token); 
+            // Also save basic user info
+            localStorage.setItem('sellerUser', JSON.stringify({ 
+                ...data.user, 
+                restaurantName: formData.restaurantName || 'Restoran Adı Yok' 
+            }));
+            
+            navigate('/seller/dashboard');
+        } else {
+            setError('Giriş başarısız. Kullanıcı bilgileri alınamadı.');
+        }
+
+      } catch (err) {
+        setError(err.message || 'Giriş işlemi başarısız.');
+      } finally {
         setLoading(false);
-        navigate('/seller/dashboard');
-      }, 1000);
-    } else {
-      if (!formData.email || !formData.password || !formData.restaurantName || !formData.phone || !formData.address) {
-        setError('Lütfen tüm alanları doldurunuz');
+      }
+
+    } else { // Register
+      if (!formData.email || !formData.password || !formData.name || !formData.phone) {
+        setError('Lütfen tüm zorunlu alanları doldurunuz.');
         setLoading(false);
         return;
       }
@@ -56,17 +99,57 @@ const SellerLoginPage = () => {
         setLoading(false);
         return;
       }
-      setTimeout(() => {
-        localStorage.setItem('sellerAuth', JSON.stringify({
-          email: formData.email,
-          restaurantName: formData.restaurantName,
-          phone: formData.phone,
-          address: formData.address,
-          id: Math.random()
+
+      // NOTE: We MUST ensure the payload sends is_seller = 1 for a seller registration
+      try {
+        const data = await publicFetch('/auth/register', {
+            method: 'POST',
+            body: JSON.stringify({
+                name: formData.name,
+                email: formData.email,
+                phone: formData.phone,
+                password: formData.password,
+                address: formData.address,
+                city: '',
+                is_seller: 1, // Crucial for seller account
+            }),
+        });
+
+        // After successful registration, save token and navigate
+        localStorage.setItem('sellerAuthToken', data.token);
+        localStorage.setItem('sellerUser', JSON.stringify({ 
+            ...data.user, 
+            restaurantName: formData.restaurantName || 'Yeni Restoran' 
         }));
-        setLoading(false);
+
+        // Now attempt to create the restaurant (POST /api/restaurants)
+        // If the seller has no restaurant yet, the dashboard will complain.
+        // We simulate automatic restaurant creation here for a smooth UX:
+        await publicFetch('/restaurants', {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${data.token}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                name: formData.restaurantName || "Yeni Restoranım",
+                cuisine: "Genel",
+                description: "Yeni bir Lezzet Express üyesi.",
+                address: formData.address,
+                phone: formData.phone,
+                // Add minimum required fields from restaurantController.js
+                delivery_time_min: 20,
+                delivery_time_max: 40,
+                min_order: 50,
+                delivery_fee: 10,
+            }),
+        });
+
+        alert('Kayıt başarılı! Restoranınız oluşturuldu.');
         navigate('/seller/dashboard');
-      }, 1000);
+
+      } catch (err) {
+        setError(err.message || 'Kayıt işlemi başarısız.');
+      } finally {
+        setLoading(false);
+      }
     }
   };
 
@@ -112,7 +195,21 @@ const SellerLoginPage = () => {
               <>
                 <div>
                   <label className="block text-sm font-semibold text-gray-700 mb-2">
-                    Restoran Adı
+                    Ad Soyad
+                  </label>
+                  <input
+                    type="text"
+                    name="name"
+                    placeholder="Adınız ve soyadınız"
+                    value={formData.name}
+                    onChange={handleInputChange}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">
+                    Restoran Adı *
                   </label>
                   <input
                     type="text"
@@ -121,34 +218,7 @@ const SellerLoginPage = () => {
                     value={formData.restaurantName}
                     onChange={handleInputChange}
                     className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">
-                    Telefon
-                  </label>
-                  <input
-                    type="tel"
-                    name="phone"
-                    placeholder="05XX XXX XX XX"
-                    value={formData.phone}
-                    onChange={handleInputChange}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">
-                    Adres
-                  </label>
-                  <input
-                    type="text"
-                    name="address"
-                    placeholder="Restoranın adresi"
-                    value={formData.address}
-                    onChange={handleInputChange}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
+                    required
                   />
                 </div>
               </>
@@ -167,9 +237,44 @@ const SellerLoginPage = () => {
                   value={formData.email}
                   onChange={handleInputChange}
                   className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
+                  required
                 />
               </div>
             </div>
+            
+            {!isLogin && (
+              <>
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">
+                    Telefon
+                  </label>
+                  <input
+                    type="tel"
+                    name="phone"
+                    placeholder="05XX XXX XX XX"
+                    value={formData.phone}
+                    onChange={handleInputChange}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">
+                    Adres
+                  </label>
+                  <input
+                    type="text"
+                    name="address"
+                    placeholder="Restoranın adresi"
+                    value={formData.address}
+                    onChange={handleInputChange}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
+                    required
+                  />
+                </div>
+              </>
+            )}
 
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-2">
@@ -184,6 +289,7 @@ const SellerLoginPage = () => {
                   value={formData.password}
                   onChange={handleInputChange}
                   className="w-full pl-10 pr-10 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
+                  required
                 />
                 <button
                   type="button"
@@ -209,6 +315,7 @@ const SellerLoginPage = () => {
                     value={formData.passwordConfirm}
                     onChange={handleInputChange}
                     className="w-full pl-10 pr-10 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
+                    required
                   />
                 </div>
               </div>
