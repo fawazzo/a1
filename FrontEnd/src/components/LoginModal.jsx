@@ -1,9 +1,9 @@
 import { useState } from 'react';
 import { X, Mail, Lock, User, Phone } from 'lucide-react';
-import { useAppContext } from '../App'; // Corrected import path
+import { useAppContext } from '../context/AppContext';
 
 const LoginModal = ({ onClose }) => {
-  const { loginUser } = useAppContext(); // Use global login function
+  const { loginUser } = useAppContext();
   const [isLogin, setIsLogin] = useState(true);
   const [formData, setFormData] = useState({
     name: '',
@@ -50,7 +50,7 @@ const LoginModal = ({ onClose }) => {
             password: formData.password,
             address: '',
             city: '',
-            is_seller: 0, // Default to customer
+            is_seller: 0,
           };
 
       const res = await fetch(endpoint, {
@@ -67,9 +67,12 @@ const LoginModal = ({ onClose }) => {
         throw new Error(data?.message || 'İşlem başarısız');
       }
 
-      if (data?.token && data?.user) {
-        // Use the context function which also saves the token to localStorage
-        loginUser(data.user, data.token); 
+      if (data?.token) {
+        localStorage.setItem('authToken', data.token);
+      }
+
+      if (data?.user) {
+        loginUser(data.user);
       }
 
       setSubmitted(true);

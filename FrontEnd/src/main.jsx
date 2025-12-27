@@ -1,11 +1,13 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
-import App from './App.jsx' // App.jsx now handles its own provider wrapper
+import App from './App.jsx'
+import { AppProvider } from './context/AppContext'
 import './index.css'
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
-    {/* Removed AppProvider wrapping here, as it is self-contained in App.jsx now */}
-    <App />
+    <AppProvider>
+      <App />
+    </AppProvider>
   </React.StrictMode>,
 )

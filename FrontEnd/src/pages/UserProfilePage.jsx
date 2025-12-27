@@ -1,37 +1,15 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { User, Heart, ShoppingBag, LogOut, Edit2, Save } from 'lucide-react';
-import { useAppContext } from '../App';
-import { authenticatedFetch } from '../utils/api';
 
 const UserProfilePage = () => {
   const navigate = useNavigate();
-  const { user, logoutUser, updateUserProfile } = useAppContext();
   const [isEditing, setIsEditing] = useState(false);
-  const [editData, setEditData] = useState({});
-  const [saveLoading, setSaveLoading] = useState(false);
-  const [saveError, setSaveError] = useState('');
-
-  // Load user data into edit state upon mount/user change
-  useEffect(() => {
-    if (user) {
-      setEditData({
-        name: user.name || '',
-        email: user.email || '',
-        phone: user.phone || '',
-        address: user.address || '',
-        city: user.city || '',
-      });
-    }
-  }, [user]);
-
-  // Mock data for display purposes (Favorites and Orders are currently in localStorage in other components)
-  const [favorites, setFavorites] = useState(
-    JSON.parse(localStorage.getItem('favorites') || '[]') // Using placeholder local storage list
-  );
-  
+  const [favorites, setFavorites] = useState([
+    { id: 1, name: 'Pizza Palace', cuisine: 'Pizza, İtalyan', rating: 4.8 },
+    { id: 2, name: 'Kebapçı Halil', cuisine: 'Kebap, Türk Mutfağı', rating: 4.9 }
+  ]);
   const [orders, setOrders] = useState([
-    // Mock orders display
     {
       id: 'ORD001',
       restaurant: 'Pizza Palace',
@@ -40,44 +18,36 @@ const UserProfilePage = () => {
       date: '2025-11-15',
       status: 'Teslim Edildi'
     },
-  ]);
-
-  const handleSaveProfile = async () => {
-    setSaveError('');
-    setSaveLoading(true);
-
-    try {
-        // NOTE: The backend API digest did not show an endpoint for updating user profile.
-        // Assuming we would use a PATCH /api/auth/me endpoint if it existed, or just update local state for demo.
-        // Since there is no update endpoint, we'll only update local state for a smooth UX flow,
-        // but note that this would need a real API call.
-
-        // Simulate API call success:
-        await new Promise(resolve => setTimeout(resolve, 500)); 
-
-        // Update global context state
-        updateUserProfile(editData); 
-        setIsEditing(false);
-    } catch (e) {
-        setSaveError(e.message || "Profil güncellenemedi.");
-    } finally {
-        setSaveLoading(false);
+    {
+      id: 'ORD002',
+      restaurant: 'Kebapçı Halil',
+      items: 'Adana Kebap x1, Ayran x1',
+      total: 85,
+      date: '2025-11-14',
+      status: 'Teslim Edildi'
     }
+  ]);
+  const [userData, setUserData] = useState({
+    name: 'Ahmet Yılmaz',
+    email: 'ahmet@example.com',
+    phone: '05XX XXX XX XX',
+    address: 'Kadıköy, İstanbul'
+  });
+  const [editData, setEditData] = useState(userData);
+
+  const handleSaveProfile = () => {
+    setUserData(editData);
+    setIsEditing(false);
   };
 
   const removeFavorite = (id) => {
-    // This should ideally call a backend API for persistence
     setFavorites(favorites.filter(fav => fav.id !== id));
   };
 
   const handleLogout = () => {
-    logoutUser();
+    localStorage.removeItem('userAuth');
     navigate('/');
   };
-  
-  if (!user) {
-    return <div className="container-custom py-12 text-center text-gray-500">Lütfen giriş yapın.</div>;
-  }
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -104,15 +74,9 @@ const UserProfilePage = () => {
                 <div className="w-20 h-20 bg-primary text-white rounded-full flex items-center justify-center mx-auto mb-4">
                   <User className="w-10 h-10" />
                 </div>
-                <h2 className="text-xl font-bold text-gray-800">{user.name}</h2>
-                <p className="text-sm text-gray-600">{user.email}</p>
+                <h2 className="text-xl font-bold text-gray-800">{userData.name}</h2>
+                <p className="text-sm text-gray-600">{userData.email}</p>
               </div>
-              
-              {saveError && (
-                <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm mb-4">
-                  {saveError}
-                </div>
-              )}
 
               <button
                 onClick={() => setIsEditing(!isEditing)}
@@ -137,7 +101,6 @@ const UserProfilePage = () => {
                     onChange={(e) => setEditData({ ...editData, email: e.target.value })}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
                     placeholder="E-posta"
-                    disabled // Email usually can't be changed easily
                   />
                   <input
                     type="tel"
@@ -155,11 +118,10 @@ const UserProfilePage = () => {
                   />
                   <button
                     onClick={handleSaveProfile}
-                    disabled={saveLoading}
-                    className="w-full flex items-center justify-center space-x-2 bg-green-500 text-white py-2 rounded-lg hover:bg-green-600 transition disabled:bg-gray-400"
+                    className="w-full flex items-center justify-center space-x-2 bg-green-500 text-white py-2 rounded-lg hover:bg-green-600 transition"
                   >
                     <Save className="w-4 h-4" />
-                    <span>{saveLoading ? 'Kaydediliyor...' : 'Kaydet'}</span>
+                    <span>Kaydet</span>
                   </button>
                 </div>
               )}
@@ -168,15 +130,11 @@ const UserProfilePage = () => {
                 <div className="space-y-2 text-sm">
                   <div className="flex justify-between">
                     <span className="text-gray-600">Telefon:</span>
-                    <span className="font-semibold">{user.phone || 'Eklenmedi'}</span>
+                    <span className="font-semibold">{userData.phone}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-gray-600">Adres:</span>
-                    <span className="font-semibold text-right">{user.address || 'Eklenmedi'}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-600">Şehir:</span>
-                    <span className="font-semibold text-right">{user.city || 'Eklenmedi'}</span>
+                    <span className="font-semibold text-right">{userData.address}</span>
                   </div>
                 </div>
               )}
@@ -233,11 +191,11 @@ const UserProfilePage = () => {
               )}
             </div>
 
-            {/* Orders Section (Note: For detailed orders, use the /orders page) */}
+            {/* Orders Section */}
             <div className="bg-white rounded-xl shadow-md p-6">
               <div className="flex items-center space-x-2 mb-6">
                 <ShoppingBag className="w-6 h-6 text-primary" />
-                <h3 className="text-xl font-bold text-gray-800">Siparişlerim (Son 2)</h3>
+                <h3 className="text-xl font-bold text-gray-800">Siparişlerim</h3>
                 <span className="bg-primary text-white text-xs px-2 py-1 rounded-full">
                   {orders.length}
                 </span>
